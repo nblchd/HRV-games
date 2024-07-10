@@ -16,20 +16,55 @@
   <p>Лицо распознается и постоянно отслеживается. Серия сигналов получается путем определения цвета лица в каждом кадре. Частота сердечных сокращений оценивается с помощью частотного анализа и фильтрации рядов.</p>
   <section id="demos" class="invisible">
     <div id="liveView" class="videoView">
-      <button id="webcamButton" class="mdc-button mdc-button--raised">
+      <button id="webcamButton" class="mdc-button mdc-button--raised" disabled="true">
         <span class="mdc-button__ripple"></span>
         <span class="mdc-button__label">ENABLE WEBCAM</span>
       </button>
       <div style="position: relative;">
         <video id="webcam" style="position: abso" autoplay playsinline></video>
         <canvas class="output_canvas" id="output_canvas" style="position: absolute; left: 0px; top: 0px;"></canvas>
-        <canvas class="test_canvas" id="test_canvas" style="position: absolute; right: 0px; bottom: 0px;"></canvas>
+        
       </div>
     </div>
-    <div id="heart-rate-display"></div>
-    <div class="blend-shapes">
-      <ul class="blend-shapes-list" id="video-blend-shapes"></ul>
-    </div>
+    <div id="forehead-bpm"></div>
+    <div id="chin-bpm"></div>
+    <div id="mouth-bpm"></div>
+    <div id="right-cheek-bpm"></div>
+    <div id="left-cheek-bpm"></div>
+    <div id="nose-bpm"></div>
+    <div id="nasion-bpm"></div>
+    <div id="average-bpm"></div>
+    <!-- <div style="display: flex; flex-wrap: wrap;">
+      <div style="display: flex; gap: 10px;">
+        <canvas id="forehead-bpm-canvas"></canvas>
+        <canvas id="forehead-bpm-mask-canvas"></canvas>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <canvas id="chin-bpm-canvas"></canvas>
+        <canvas id="chin-bpm-mask-canvas"></canvas>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <canvas id="mouth-bpm-canvas"></canvas>
+        <canvas id="mouth-bpm-mask-canvas"></canvas>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <canvas id="right-cheek-bpm-canvas"></canvas>
+        <canvas id="right-cheek-bpm-mask-canvas"></canvas>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <canvas id="left-cheek-bpm-canvas"></canvas>
+        <canvas id="left-cheek-bpm-mask-canvas"></canvas>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <canvas id="nose-bpm-canvas"></canvas>
+        <canvas id="nose-bpm-mask-canvas"></canvas>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <canvas id="nasion-bpm-canvas"></canvas>
+        <canvas id="nasion-bpm-mask-canvas"></canvas>
+      </div>
+    </div> -->
+    
   </section>
   <script src="MPheartbeat.js" type="module"></script>
 </body>

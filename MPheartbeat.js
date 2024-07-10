@@ -1,27 +1,37 @@
 import vision from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
 const { FaceLandmarker, FilesetResolver, DrawingUtils } = vision;
-const heartRateDisplay = document.getElementById("heart-rate-display");
 const OPENCV_URI = "https://docs.opencv.org/master/opencv.js";
+const enableWebcamButton = document.getElementById("webcamButton");
+
+const foreheadDisplay = document.getElementById("forehead-bpm");
+const chinDisplay = document.getElementById("chin-bpm");
+const mouthDisplay = document.getElementById("mouth-bpm");
+const rightCheekDisplay = document.getElementById("right-cheek-bpm");
+const leftCheekDisplay = document.getElementById("left-cheek-bpm");
+const noseDisplay = document.getElementById("nose-bpm");
+const nasionDisplay = document.getElementById("nasion-bpm");
+const avirageDisplay = document.getElementById("average-bpm");
+
 
 let faceLandmarker;
 let runningMode = "IMAGE";
-let enableWebcamButton;
 let webcamRunning = false;
 const videoWidth = 480;
-const frameBuffer = [];
+
 const timestamps =[];
-const heartrateBuffer =[];
-const bufferSize = 300; // Store last 300 frames (10 seconds at 30 FPS)
-const greenValues = []; // Store mean green values for rPPG
-const DEFAULT_FPS = 60;
-let lastVideoTime = -1;
-let results = undefined;
-let overlayMask ;
+const bufferSize = 180; // Store last 150 frames (5 seconds at 30 FPS)
+const MAX_BUFFER_SIZE = 181;
+const DEFAULT_FPS = 30;
 const LOW_BPM = 42;
 const HIGH_BPM = 240;
 const SEC_PER_MIN = 60;
-const fps = 60;
+let counter = 0
+let lastVideoTime = -1;
+let results = undefined;
 
+const video = document.getElementById("webcam");
+const canvasElement = document.getElementById("output_canvas");
+const canvasCtx = canvasElement.getContext("2d");
 
 const FOREHEAD_LANDMARKS = [
   { "start": 9, "end": 107 },
@@ -173,7 +183,24 @@ const NASION_LANDMARKS = [
   { "start": 419, "end": 197 }
 ];
 
-const FACE_ZONES = [FOREHEAD_LANDMARKS, LEFT_CHEEK_LANDMARKS, RIGHT_CHEEK_LANDMARKS, NOSE_LANDMARKS, NASION_LANDMARKS, MOUTH_LANDMARKS, CHIN_LANDMARKS];
+
+
+const FACE_ZONES = [
+  {label: "FOREHEAD", landmarks: FOREHEAD_LANDMARKS, display: foreheadDisplay}, 
+  {label: "LEFT_CHEEK", landmarks: LEFT_CHEEK_LANDMARKS, display: leftCheekDisplay}, 
+  {label: "RIGHT_CHEEK", landmarks: RIGHT_CHEEK_LANDMARKS, display:  rightCheekDisplay}, 
+  {label: "NOSE", landmarks: NOSE_LANDMARKS, display: noseDisplay}, 
+  {label: "NASION", landmarks: NASION_LANDMARKS, display: nasionDisplay}, 
+  {label: "MOUTH", landmarks: MOUTH_LANDMARKS, display: mouthDisplay}, 
+  {label: "CHIN", landmarks: CHIN_LANDMARKS, display: chinDisplay}
+];
+
+const frameBuffer = Array(FACE_ZONES.length).fill([]);
+// const heartrateBuffer = Array(FACE_ZONES.length).fill([]);
+const frameHeartrateBuffer = Array(FACE_ZONES.length).fill([]);
+const heartrateBuffer = [];
+const greenValues = Array(FACE_ZONES.length).fill([]);
+
 async function loadOpenCv(uri) {
   return new Promise(function(resolve, reject) {
     console.log("starting to load opencv");
@@ -203,7 +230,7 @@ async function createFaceLandmarker() {
   faceLandmarker = await FaceLandmarker.createFromOptions(filesetResolver, {
     baseOptions: {
       modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task`,
-      delegate: "GPU"
+      delegate: "CPU"
     },
     outputFaceBlendshapes: true,
     runningMode,
@@ -211,12 +238,6 @@ async function createFaceLandmarker() {
   });
 }
 createFaceLandmarker();
-
-
-const video = document.getElementById("webcam");
-const canvasElement = document.getElementById("output_canvas");
-const canvasCtx = canvasElement.getContext("2d");
-
 // Check if webcam access is supported.
 function hasGetUserMedia() {
   return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
@@ -224,11 +245,16 @@ function hasGetUserMedia() {
 
 // If webcam supported, add event listener to button for when user wants to activate it.
 if (hasGetUserMedia()) {
-  enableWebcamButton = document.getElementById("webcamButton");
   enableWebcamButton.addEventListener("click", enableCam);
 } else {
   console.warn("getUserMedia() is not supported by your browser");
 }
+let enableButtonInterval = setInterval(() => {
+  console.log("sadasas")
+  if(faceLandmarker && cv) {
+    enableWebcamButton.disabled = false;
+  }
+}, 1000)
 
 // Enable the live webcam view and start detection.
 function enableCam(event) {
@@ -260,7 +286,9 @@ function enableCam(event) {
 const drawingUtils = new DrawingUtils(canvasCtx);
 
 async function predictWebcam() {
-  let time = Date.now()
+  if (enableWebcamButton.disabled === false) {
+    clearInterval(enableButtonInterval)
+  }
   const radio = video.videoHeight / video.videoWidth;
   video.style.width = videoWidth + "px";
   video.style.height = videoWidth * radio + "px";
@@ -268,7 +296,7 @@ async function predictWebcam() {
   canvasElement.style.height = videoWidth * radio + "px";
   canvasElement.width = video.videoWidth;
   canvasElement.height = video.videoHeight;
-  overlayMask = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC1);
+  
   if (runningMode === "IMAGE") {
     runningMode = "VIDEO";
     await faceLandmarker.setOptions({ runningMode: runningMode });
@@ -278,194 +306,144 @@ async function predictWebcam() {
   if (lastVideoTime !== video.currentTime) {
     lastVideoTime = video.currentTime;
     results = await faceLandmarker.detectForVideo(video, startTimeMs);
-    
   }
-  
-  if (results.faceLandmarks) {
-    
-    // Создание нового холста для области с лицевыми ориентирами
-    let frameCanvas = document.createElement('canvas');
-    frameCanvas.width = video.videoWidth;
-    frameCanvas.height = video.videoHeight;
-    let frameCtx = frameCanvas.getContext('2d');
-    
-    frameCtx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
-    
-    for (const landmarks of results.faceLandmarks) {
-      drawingUtils.drawConnectors(
-        landmarks,
-        FOREHEAD_LANDMARKS,
-        { fill: "#C0C0C070", lineWidth: 1 }
-      );
-      drawingUtils.drawConnectors(
-        landmarks,
-        CHIN_LANDMARKS,
-        { fill: "#C0C0C070", lineWidth: 1 }
-      );
-      drawingUtils.drawConnectors(
-        landmarks,
-        MOUTH_LANDMARKS,
-        { fill: "#C0C0C070", lineWidth: 1 }
-      );
-      drawingUtils.drawConnectors(
-        landmarks,
-        RIGHT_CHEEK_LANDMARKS,
-        { fill: "#C0C0C070", lineWidth: 1 }
-      );
-      drawingUtils.drawConnectors(
-        landmarks,
-        LEFT_CHEEK_LANDMARKS,
-        { fill: "#C0C0C070", lineWidth: 1 }
-      );
-      drawingUtils.drawConnectors(
-        landmarks,
-        NASION_LANDMARKS,
-        { fill: "#C0C0C070", lineWidth: 1 }
-      );
-      drawingUtils.drawConnectors(
-        landmarks,
-        NOSE_LANDMARKS,
-        { fill: "#C0C0C070", lineWidth: 1 }
-      );
-      for (const zone of FACE_ZONES) {
-        frameCtx.beginPath();
-        const startPoint = landmarks[zone[0].start];
-        frameCtx.moveTo(startPoint.x * frameCanvas.width, startPoint.y * frameCanvas.height);
-  
-        for (const connection of zone) {
-          const point = landmarks[connection.end];
-          frameCtx.lineTo(point.x * frameCanvas.width, point.y * frameCanvas.height);
-        }
-        frameCtx.closePath();
-        frameCtx.stroke();
-      }
-     
-    }
-
-    // Извлечение зеленого канала и вычисление среднего значения
-    let frame = cv.imread(frameCanvas);
-    let frameRGBA = new cv.Mat();
-    
-    cv.cvtColor(frame, frameRGBA, cv.COLOR_RGB2RGBA);
-    cv.imshow("test_canvas", frameRGBA);
-    frameBuffer.push(frameRGBA);
-    timestamps.push(time)
-    if (frameBuffer.length > bufferSize) {
-      frameBuffer.shift();
-      timestamps.shift();
-    }
-    
-
-    computeHeartRate(frameBuffer);
-    
-    frame.delete();
-    frameRGBA.delete();
-    frameCanvas.remove(); // Удаляем временный холст
-
+  if (results && results.faceLandmarks) {
+    processFrame()
   }
- 
   // Call this function again to keep predicting when the browser is ready.
   if (webcamRunning === true) {
-    window.requestAnimationFrame(predictWebcam);
+    setInterval(window.requestAnimationFrame(predictWebcam), 250); 
   }
 }
 
 
+function processFrame ()  {
+  // console.log("counter",counter++)
+  try {
+    let time = Date.now()
+    
+    FACE_ZONES.forEach((zone, index) => {
+      let frameCanvas = document.createElement('canvas');
+      frameCanvas.width = video.videoWidth;
+      frameCanvas.height = video.videoHeight;
+      let frameCtx = frameCanvas.getContext('2d');
+      let points = [];
+      frameCtx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+      
+      for (const landmarks of results.faceLandmarks) {
+        drawingUtils.drawConnectors(
+          landmarks,
+          zone.landmarks,
+          { fill: "#C0C0C070", lineWidth: 1 }
+        );
+        const startPoint = landmarks[zone.landmarks[0].start];
+        points.push(new cv.Point(startPoint.x * frameCanvas.width, startPoint.y * frameCanvas.height));
+        
+        for (const connection of zone.landmarks) {
+          const point = landmarks[connection.end];
+          points.push(new cv.Point(point.x * frameCanvas.width, point.y * frameCanvas.height));
+          
+        }
+      }
+      
+      let frame = cv.imread(frameCanvas);
+      let frameRGBA = new cv.Mat();
+      cv.cvtColor(frame, frameRGBA, cv.COLOR_RGB2RGBA);
+      frame.delete();
+      
+      // Создание маски для выделенной области
+      let mask = new cv.Mat.zeros(frameRGBA.rows, frameRGBA.cols, cv.CV_8UC1);
+      let pointsData = new cv.MatVector();
+      let mv = new cv.Mat(points.length, 1, cv.CV_32SC2);
+      points.flat().forEach(({ x, y }, idx) => {
+        mv.intPtr(idx, 0)[0] = x;
+        mv.intPtr(idx, 0)[1] = y;
+      });
+      
+      pointsData.push_back(mv);
+      mv.delete();
+      
+      // cv.polylines(mask, pointsData, false, new cv.Scalar(255,255,255), 1);
+      cv.fillPoly(mask, pointsData, new cv.Scalar(255, 255, 255));
+      pointsData.delete();
+      
+      let maskedFrame = new cv.Mat();
+      cv.bitwise_and(frameRGBA, frameRGBA, maskedFrame, mask);
+      frameRGBA.delete();
+      
+      cv.imshow(`${FACE_ZONES[index].display.id}-canvas`, maskedFrame);
+      cv.imshow(`${FACE_ZONES[index].display.id}-mask-canvas`, mask);
+      
+      let means = cv.mean(maskedFrame, mask);
+      mask.delete();
+      maskedFrame.delete();
+      
+      frameBuffer[index].push(means.slice(0, 3));
+      timestamps.push(time)
+      
+      while (frameBuffer[index].length > MAX_BUFFER_SIZE) {
+        frameBuffer[index].shift();
+        timestamps.shift();
+      }
+      
+      if (frameBuffer[index].length === MAX_BUFFER_SIZE) {
+        let bpm = computeHeartRate(frameBuffer[index]);
+        frameHeartrateBuffer[index].push(parseInt(bpm));
+        while (frameHeartrateBuffer[index].length > 100) {
+          frameHeartrateBuffer[index].shift();
+        }
+        console.log("frameHeartrateBuffer[index]",frameHeartrateBuffer[index])
+        const getAverageHeartrate = (numbers) => numbers.reduce((acc, number) => acc + number, 0) / numbers.length;
+        FACE_ZONES[index].display.innerText = `${FACE_ZONES[index].display.id}: ${getAverageHeartrate(frameHeartrateBuffer[index]).toFixed(0)} BPM`;
+        calculateAverage();
+      }
+      
+      
+      frameCanvas.remove(); 
+    }) 
+  } catch (error) {
+    console.error("Error in processFrame: ", error);
+  }
+  
+}
 
 function computeHeartRate(frames) {
-  if (frames.length < bufferSize) {
-    return;
-  }
+  // if (frames.length < bufferSize) {
+  //   return;
+  // }
   let fps = getFps(timestamps);
   let signal = cv.matFromArray(frames.length, 1, cv.CV_32FC3, [].concat.apply([], frames));
   
-  // let signal = frames[frames.length - 1];
-  console.log("signal",signal)
-  // console.log("frames",frames[frames.length - 1])
   denoise(signal);
-  console.log("denoise",signal)
   standardize(signal);
-  console.log("standardize",signal)
-  detrend(signal, 60);
-  console.log("detrend",signal)
-  movingAverage(signal, 3, Math.max(Math.floor(60/6), 2));
-  console.log("movingAverage",signal)
+  detrend(signal, fps);
+  movingAverage(signal, 3, Math.max(Math.floor(fps/6), 2));
   signal = selectGreen(signal);
-  console.log("selectGreen",signal)
-  overlayMask.setTo([0, 0, 0, 0]);
   // drawTime(signal);
-  // timeToFrequency(signal, true);
+  timeToFrequency(signal, true);
   // Calculate band spectrum limits
-  console.log("fps",fps)
   let low = Math.floor(signal.rows * LOW_BPM / SEC_PER_MIN / fps);
   let high = Math.ceil(signal.rows * HIGH_BPM / SEC_PER_MIN / fps);
-  console.log("low",low,"high",high)
   if (!signal.empty()) {
     // Mask for infeasible frequencies
     let bandMask = cv.matFromArray(signal.rows, 1, cv.CV_8U,
       new Array(signal.rows).fill(0).fill(1, low, high+1));
+      
     // drawFrequency(signal, low, high, bandMask);
-    // Identify feasible frequency with maximum magnitude
-    console.log("signal",signal)
-    console.log("bandMask",bandMask)
     let result = cv.minMaxLoc(signal, bandMask);
     bandMask.delete();
-    // Infer BPM
-    console.log("result.maxLoc.y",result.maxLoc.y, "fps", fps, "signal.rows", signal.rows, "SEC_PER_MIN", SEC_PER_MIN)
-    let bpm = result.maxLoc.y * fps / signal.rows * SEC_PER_MIN;
-    heartRateDisplay.innerText = `Heart Rate: ${bpm} BPM`;
+    // console.log("result.maxLoc.y",result.maxLoc.y, "fps",fps, "signal.rows", signal.rows, "SEC_PER_MIN",SEC_PER_MIN)
+    
+    return (result.maxLoc.y * fps / signal.rows * SEC_PER_MIN).toFixed(0);
+    // return result.maxLoc.y * fps / signal.rows * SEC_PER_MIN;
+    
     // Draw BPM
     // drawBPM(bpm);
   }
   signal.delete();
 
-  // // Применение БПФ (быстрое преобразование Фурье) для вычисления частоты сердечных сокращений
-  // try {
-  //   let mean = greenValues.reduce((a, b) => a + b, 0) / greenValues.length;
-  //   let adjustedValues = greenValues.map(value => value - mean);
-
-  //   let src = cv.matFromArray(adjustedValues.length, 1, cv.CV_32FC1, adjustedValues);
-  //   let dst = new cv.Mat();
-  //   cv.dft(src, dst, cv.DFT_REAL_OUTPUT);
-
-  //   let dst0 = dst.col(0);
-  //   let magnitude = new cv.Mat();
-  //   cv.magnitude(dst0, dst0, magnitude);
-
-  //   // Пиковая частота в диапазоне частот сердечных сокращений (0.75 - 3 Гц, что соответствует 45 - 240 BPM)
-  //   let minFreq = 0.75;
-  //   let maxFreq = 4.0;
-  //   let sampleRate = 30; // частота выборки 30 кадров в секунду
-
-  //   // Вычисляем диапазон индексов частот
-  //   let startIdx = Math.floor(minFreq * bufferSize / sampleRate);
-  //   let endIdx = Math.ceil(maxFreq * bufferSize / sampleRate);
-
-  //   let maxIdx = startIdx;
-  //   let maxVal = magnitude.data32F[startIdx];
-  //   for (let i = startIdx + 1; i < endIdx; i++) {
-  //     if (magnitude.data32F[i] > maxVal) {
-  //       maxVal = magnitude.data32F[i];
-  //       maxIdx = i;
-  //     }
-  //   }
-
-  //   let heartRate = maxIdx * sampleRate / bufferSize * 60;
-  //   heartrateBuffer.push(heartRate);
-  //   if (heartrateBuffer.length > 100) {
-  //     heartrateBuffer.shift();
-  //   }
-  //   console.log(heartrateBuffer)
-  //   const getAverageHeartrate = (numbers) => numbers.reduce((acc, number) => acc + number, 0) / numbers.length;
-  //   heartRateDisplay.innerText = `Heart Rate: ${getAverageHeartrate(heartrateBuffer).toFixed(0)} BPM`;
-
-  //   src.delete();
-  //   dst.delete();
-  //   magnitude.delete();
-  // } catch (error) {
-  //   console.error("Error in computeHeartRate: ", error);
-  // }
 }
+
 
 function denoise(signal, rescan) {
   let diff = new cv.Mat();
@@ -507,6 +485,7 @@ function standardize(signal) {
   means_c3.delete(); stdDev_c3.delete();
   means.delete(); stdDevs.delete();
 }
+
 // Remove trend in signal
 function detrend(signal, lambda) {
   let h = cv.Mat.zeros(signal.rows-2, signal.rows, cv.CV_32FC1);
@@ -530,6 +509,7 @@ function detrend(signal, lambda) {
   t1.delete(); t2.delete(); t3.delete();
   s.delete();
 }
+
 // Moving average on signal
 function movingAverage(signal, n, kernelSize) {
   for (var i = 0; i < n; i++) {
@@ -537,16 +517,33 @@ function movingAverage(signal, n, kernelSize) {
   }
 }
 
+function timeToFrequency(signal, magnitude) {
+  // Prepare planes
+  let planes = new cv.MatVector();
+  planes.push_back(signal);
+  planes.push_back(new cv.Mat.zeros(signal.rows, 1, cv.CV_32F))
+  cv.merge(planes, signal);
+  // Fourier transform
+  cv.dft(signal, signal, cv.DFT_COMPLEX_OUTPUT);
+  if (magnitude) {
+    cv.split(signal, planes);
+    cv.magnitude(planes.get(0), planes.get(1), signal);
+  }
+}
+
 function selectGreen(signal) {
   let rgb = new cv.MatVector();
   cv.split(signal, rgb);
-  // TODO possible memory leak, delete rgb?
   
-  console.log("rgb", rgb);
-  let result = rgb.get(1);
+  // Extract the green channel (index 1)
+  let result = rgb.get(1); // Clone to avoid memory leak
+  
+  // Clean up allocated Mats
   rgb.delete();
+
   return result;
 }
+
 function getFps(timestamps, timeBase=1000) {
   if (Array.isArray(timestamps) && timestamps.length) {
     if (timestamps.length == 1) {
@@ -559,3 +556,35 @@ function getFps(timestamps, timeBase=1000) {
     return DEFAULT_FPS;
   }
 }
+
+function calculateAverage() {
+  // Extract numbers and convert them to integers
+  const values = [
+    getNumberFromElement(foreheadDisplay),
+    getNumberFromElement(chinDisplay),
+    getNumberFromElement(mouthDisplay),
+    getNumberFromElement(rightCheekDisplay),
+    getNumberFromElement(leftCheekDisplay),
+    getNumberFromElement(noseDisplay),
+    getNumberFromElement(nasionDisplay)
+  ];
+  // Filter out NaN values in case of any invalid number
+  const validValues = values.filter(value => !isNaN(value));
+
+  // Calculate the average
+  const sum = validValues.reduce((acc, val) => acc + val, 0);
+  const average = validValues.length ? sum / FACE_ZONES.length : 0;
+  heartrateBuffer.push(average);
+  if (heartrateBuffer.length > 100) {
+    heartrateBuffer.shift();
+  }
+  const getAverageHeartrate = (numbers) => numbers.reduce((acc, number) => acc + number, 0) / numbers.length;
+  // Display the average
+  avirageDisplay.innerText = `average-bpm: ${getAverageHeartrate(heartrateBuffer).toFixed(0)} BPM`;
+}
+function getNumberFromElement(element) {
+  const text = element.textContent;
+  const match = text.match(/(\d+(\.\d+)?)/);
+  return match ? parseFloat(match[0]) : 0;
+}
+
