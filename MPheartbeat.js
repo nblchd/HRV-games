@@ -371,8 +371,8 @@ function processFrame ()  {
       cv.bitwise_and(frameRGBA, frameRGBA, maskedFrame, mask);
       frameRGBA.delete();
       
-      cv.imshow(`${FACE_ZONES[index].display.id}-canvas`, maskedFrame);
-      cv.imshow(`${FACE_ZONES[index].display.id}-mask-canvas`, mask);
+      // cv.imshow(`${FACE_ZONES[index].display.id}-canvas`, maskedFrame);
+      // cv.imshow(`${FACE_ZONES[index].display.id}-mask-canvas`, mask);
       
       let means = cv.mean(maskedFrame, mask);
       mask.delete();
